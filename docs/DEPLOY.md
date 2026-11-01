@@ -1,0 +1,56 @@
+# Deploying
+
+Same setup as Kanakku: API on Render, web on Vercel, database on MongoDB Atlas, Android app through Expo EAS.
+
+## 1. MongoDB Atlas
+
+Use an existing cluster or create a free M0 one.
+
+- **Network Access** → `0.0.0.0/0` (Render's free plan has no fixed IP).
+- **Connect → Drivers** → copy `mongodb+srv://USER:PASSWORD@cluster.xxxxx.mongodb.net/...`
+- The database name is set separately (`MONGODB_DB=arangam`), so this app's data stays apart from other apps on the same cluster. Collections and indexes are created on first start.
+
+## 2. API on Render
+
+Service **arangam-api** (Singapore, free) is already connected to this repo and redeploys on every push to `main`.
+
+- Build: `npm --prefix api ci --omit=dev` · Start: `npm --prefix api start`
+- Environment: `NODE_ENV=production`, `MONGODB_DB=arangam`, `JWT_SECRET`, `MOCK_PAYMENT_SECRET`, `SEED_DEMO_DATA=true`, `PAYMENT_PROVIDER=mock` are set.
+- **You add:** `MONGODB_URI` = your Atlas string → Save. Render redeploys; logs show `MongoDB connected` then `Demo data seeded`.
+- Check: `https://arangam-api.onrender.com/health` → `{"status":"ok","db":"up"}`.
+
+`render.yaml` describes the same service as a Blueprint if you ever recreate it.
+
+**Free-tier sleep:** the service sleeps after 15 minutes idle; the first request takes ~50 s. Web and mobile wait up to 60–75 s and say the server may be waking up.
+
+`SEED_DEMO_DATA=true` only fills an **empty** database. To reset the demo data from your laptop: `cd api && MONGODB_URI="<atlas>" npm run seed -- --reset` (only touches `*@arangam.demo` users and demo halls).
+
+## 3. Web on Vercel
+
+Project **arangam** (root directory `web`, framework Vite) is linked to this repo; every push to `main` deploys.
+
+- Env: `VITE_API_URL=https://arangam-api.onrender.com/api` (baked in at build time — redeploy after changing it).
+- `web/vercel.json` rewrites all paths to `index.html` for client-side routing.
+- Live at https://arangam-one.vercel.app
+
+Optional: lock CORS by setting `CLIENT_ORIGINS=https://arangam-one.vercel.app` on Render.
+
+## 4. Android APK with EAS
+
+```bash
+cd mobile
+npm ci
+npm i -g eas-cli
+eas login            # free Expo account
+eas init             # once: links the project, writes the project id into app.json
+eas build -p android --profile preview
+```
+
+Open the link EAS prints on your phone and install the APK. `eas.json` points every profile at the Render API.
+
+## Razorpay later
+
+1. Get **test** keys from the Razorpay dashboard.
+2. On Render: `PAYMENT_PROVIDER=razorpay`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`.
+3. Replace the test-payment sheet in web (`web/src/pages/Checkout.tsx`) and mobile (`mobile/src/app/checkout/[id].tsx`) with Razorpay Checkout using the `orderId` and `keyId` the API already returns; send its `razorpay_payment_id` / `razorpay_signature` to `POST /api/bookings/:id/confirm` exactly as now.
+4. Add a webhook route for `payment.captured` so a payment completed after the app closed still confirms or refunds.
