@@ -7,8 +7,8 @@ const HALL_UNITS = [
 ];
 
 const HALL_SLOTS = [
-  { key: 'MORNING', label: 'Morning · Muhurtham', start: '05:00', end: '13:00', units: ['MORNING'] },
-  { key: 'EVENING', label: 'Evening · Reception', start: '16:00', end: '23:00', units: ['EVENING'] },
+  { key: 'MORNING', label: 'Morning muhurtham', start: '05:00', end: '13:00', units: ['MORNING'] },
+  { key: 'EVENING', label: 'Evening reception', start: '16:00', end: '23:00', units: ['EVENING'] },
   { key: 'FULL_DAY', label: 'Full day', start: '05:00', end: '23:00', units: ['MORNING', 'EVENING'] },
 ];
 

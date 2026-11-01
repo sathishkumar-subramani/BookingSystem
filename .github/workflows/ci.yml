@@ -8,17 +8,23 @@ on:
 jobs:
   api:
     name: API tests (real MongoDB)
-    runs-on: ubuntu-latest
+    # Pinned: MongoDB 8 refuses to start on Linux 6.19+ kernels (SERVER-121912), which newer runner images use.
+    runs-on: ubuntu-24.04
     services:
       mongo:
         image: mongo:8
         ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     defaults:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -26,4 +32,4 @@ jobs:
       - run: npm ci
       - run: npm test
         env:
-          TEST_MONGODB_URI: mongodb://localhost:27017
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017
