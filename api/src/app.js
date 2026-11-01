@@ -46,6 +46,15 @@ export function createApp() {
     res.json({ status: db === 'up' ? 'ok' : 'degraded', db });
   });
 
+  // Without a database every query would sit in Mongoose's buffer for 10 s and then fail with a vague 500.
+  // Answer straight away instead, so the apps can say what's wrong.
+  app.use('/api', (_req, res, next) => {
+    if (dbState() === 'up') return next();
+    res.status(503).json({
+      error: { code: 'DB_UNAVAILABLE', message: 'The server is starting up or its database is not connected yet. Please try again in a minute.' },
+    });
+  });
+
   app.use('/api/auth', authRoutes);
   app.use('/api', publicRoutes);
   app.use('/api', bookingRoutes);
