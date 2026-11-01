@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { config } from '../config.js';
 import { activeLockFilter, locksByDate, slotIsFree } from '../engines/exclusive.js';
 import { daysBetween, monthDays, todayIST } from '../lib/dates.js';
-import { AppError, notFound } from '../lib/errors.js';
+import { AppError, badRequest, notFound } from '../lib/errors.js';
 import { describePolicy } from '../lib/policy.js';
 import { SlotLock } from '../models/SlotLock.js';
 import { Venue } from '../models/Venue.js';
@@ -94,14 +94,20 @@ async function unavailableVenueIds(type, date, slotKey, now) {
     const units = tmpl ? tmpl.units : [slotKey];
     return SlotLock.distinct('venueId', { date, unit: { $in: units }, ...active });
   }
-  // No session chosen: hide only venues where every unit of the day is gone.
-  const unitCount = Math.max(1, type.units.length);
-  const rows = await SlotLock.aggregate([
-    { $match: { date, ...active } },
-    { $group: { _id: '$venueId', units: { $addToSet: '$unit' } } },
-    { $match: { $expr: { $gte: [{ $size: '$units' }, unitCount] } } },
-  ]);
-  return rows.map((r) => r._id);
+  // No session chosen: hide a hall when none of ITS enabled sessions is completely free that day
+  // (a hall that only sells full days is gone as soon as either half is taken).
+  const locks = await SlotLock.find({ date, ...active }).select('venueId unit').lean();
+  const byVenue = new Map();
+  for (const l of locks) {
+    const k = l.venueId.toString();
+    if (!byVenue.has(k)) byVenue.set(k, new Set());
+    byVenue.get(k).add(l.unit);
+  }
+  if (!byVenue.size) return [];
+  const venues = await Venue.find({ _id: { $in: [...byVenue.keys()] } }).select('slots').lean();
+  return venues
+    .filter((v) => !v.slots.some((s) => s.enabled && s.units.every((u) => !byVenue.get(v._id.toString()).has(u))))
+    .map((v) => v._id);
 }
 
 const SORTS = {
@@ -115,6 +121,9 @@ export async function searchVenues(p, now = new Date()) {
   const type = await getVenueType(p.type);
   if (!type.enabled) throw new AppError(409, 'TYPE_DISABLED', `${type.name} are coming soon`);
 
+  if (p.date && !isBookableDate(p.date, now)) {
+    throw badRequest(`Pick a date from tomorrow up to ${config.maxAdvanceDays} days ahead`);
+  }
   const match = { status: 'approved', typeKey: type.key };
   if (p.district) match['address.district'] = p.district;
   if (p.city) match['address.city'] = new RegExp(`^${escapeRx(p.city)}$`, 'i');

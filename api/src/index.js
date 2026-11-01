@@ -3,7 +3,7 @@ import { config } from './config.js';
 import { connectDb } from './db.js';
 import { logger } from './lib/logger.js';
 import { sweep } from './services/booking.service.js';
-import { seedIfEmpty } from './seed/demo.js';
+import { seedIfEmpty, syncDemoAdminPassword } from './seed/demo.js';
 
 const app = createApp();
 
@@ -14,6 +14,7 @@ async function start(attempt = 1) {
   try {
     await connectDb();
     if (config.seedDemoData) await seedIfEmpty();
+    if (config.demoMode || !config.isProd) await syncDemoAdminPassword();
   } catch (err) {
     // Keep the API up (health says "degraded") and try again with backoff, e.g. while Atlas wakes up.
     const wait = Math.min(60, 5 * attempt);

@@ -1,6 +1,11 @@
 import crypto from 'node:crypto';
 import { AppError } from '../../lib/errors.js';
 
+// Before going live with this adapter:
+//   1. After verifying the signature, also GET /payments/:id and check status === 'captured' and the amount.
+//   2. Add a webhook route (payment.captured / payment.failed) so a payment finished after the app was
+//      closed still confirms or is refunded — the mock gateway can't have that problem, Razorpay can.
+//
 // Razorpay adapter — ready for when you add keys (PAYMENT_PROVIDER=razorpay, RAZORPAY_KEY_ID,
 // RAZORPAY_KEY_SECRET). Not exercised by the tests yet: try it with Razorpay *test* keys first.
 // Docs: https://razorpay.com/docs/payments/server-integration/nodejs/

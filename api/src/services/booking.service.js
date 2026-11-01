@@ -2,11 +2,13 @@ import mongoose from 'mongoose';
 import { config } from '../config.js';
 import { engineFor } from '../engines/index.js';
 import { daysBetween, todayIST } from '../lib/dates.js';
-import { AppError, badRequest, conflict, forbidden, gone, notFound } from '../lib/errors.js';
+import { AppError, badRequest, conflict, forbidden, gone, isDuplicateKey, notFound } from '../lib/errors.js';
 import { bookingCode } from '../lib/ids.js';
 import { percentOf } from '../lib/money.js';
 import { priceBooking, refundPercent } from '../lib/policy.js';
+import { logger } from '../lib/logger.js';
 import { Booking } from '../models/Booking.js';
+import { HoldTicket } from '../models/HoldTicket.js';
 import { Payment } from '../models/Payment.js';
 import { SlotLock } from '../models/SlotLock.js';
 import { Venue } from '../models/Venue.js';
@@ -19,6 +21,26 @@ import { isBookableDate } from './venue.service.js';
 const LOCK_GRACE_MS = 2 * 60 * 1000;
 const SWEEP_GRACE_MS = 60 * 1000;
 const MAX_OPEN_HOLDS = 2;
+const EXPIRED_MESSAGE = 'Your hold ran out before the payment finished. The advance has been refunded in full.';
+
+/** Take one of the user's hold tickets, atomically. Throws TOO_MANY_HOLDS when both are in use. */
+async function acquireHoldTicket(userId, bookingId, expiresAt, now) {
+  for (let n = 0; n < MAX_OPEN_HOLDS; n += 1) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await HoldTicket.create({ userId, n, bookingId, expiresAt });
+        return;
+      } catch (err) {
+        if (!isDuplicateKey(err)) throw err;
+        // A ticket whose hold already ran out doesn't count (the TTL sweeper may lag a minute).
+        const stale = await HoldTicket.deleteOne({ userId, n, expiresAt: { $lte: now } });
+        if (!stale.deletedCount) break;
+      }
+    }
+  }
+  throw conflict('You already have bookings waiting for payment. Finish or cancel one first.', 'TOO_MANY_HOLDS');
+}
+const releaseHoldTicket = (bookingId) => HoldTicket.deleteMany({ bookingId });
 
 // ───────────────────────────── serialisation ─────────────────────────────
 
@@ -64,6 +86,7 @@ export async function sweep(now = new Date()) {
     await Booking.updateMany({ _id: { $in: ids }, status: 'HELD' }, { $set: { status: 'EXPIRED' } });
     // Only 'hold' locks — if one of these got confirmed a moment ago its locks are 'booking' now.
     await SlotLock.deleteMany({ bookingId: { $in: ids }, kind: 'hold' });
+    await HoldTicket.deleteMany({ bookingId: { $in: ids } });
   }
   await Booking.updateMany({ status: 'CONFIRMED', date: { $lt: todayIST(now) } }, { $set: { status: 'COMPLETED' } });
 }
@@ -99,12 +122,6 @@ export async function createBooking(user, input, now = new Date()) {
     throw badRequest('Unsupported event type');
   }
 
-  // Stop one person from sitting on many dates at once (e.g. holding every muhurtham day in a month).
-  const openHolds = await Booking.countDocuments({ userId: user._id, status: 'HELD', holdExpiresAt: { $gt: now } });
-  if (openHolds >= MAX_OPEN_HOLDS) {
-    throw conflict('You already have a booking waiting for payment. Finish or cancel it first.', 'TOO_MANY_HOLDS');
-  }
-
   const special = venue.specialPricing.find((s) => s.date === input.date);
   const pricing = priceBooking({
     slotPrice: slot.price,
@@ -116,17 +133,25 @@ export async function createBooking(user, input, now = new Date()) {
   const bookingId = new mongoose.Types.ObjectId();
   const holdExpiresAt = new Date(now.getTime() + config.holdMinutes * 60_000);
 
-  // 1. Take the slot (throws 409 SLOT_TAKEN if someone else has it).
-  await engine.acquireUnits({
-    venueId: venue._id,
-    date: input.date,
-    units: slot.units,
-    kind: 'hold',
-    bookingId,
-    expiresAt: new Date(holdExpiresAt.getTime() + LOCK_GRACE_MS),
-  });
+  // 1. Stop one person sitting on many dates at once (e.g. every muhurtham day in a month): 2 open holds max.
+  await acquireHoldTicket(user._id, bookingId, holdExpiresAt, now);
 
-  // 2. Record the booking and open a payment order. Undo the lock if either step fails.
+  // 2. Take the slot (throws 409 SLOT_TAKEN if someone else has it).
+  try {
+    await engine.acquireUnits({
+      venueId: venue._id,
+      date: input.date,
+      units: slot.units,
+      kind: 'hold',
+      bookingId,
+      expiresAt: new Date(holdExpiresAt.getTime() + LOCK_GRACE_MS),
+    });
+  } catch (err) {
+    await releaseHoldTicket(bookingId);
+    throw err;
+  }
+
+  // 3. Record the booking and open a payment order. Undo the locks if either step fails.
   try {
     const code = bookingCode();
     const provider = paymentProvider();
@@ -173,6 +198,7 @@ export async function createBooking(user, input, now = new Date()) {
     };
   } catch (err) {
     await engine.releaseBooking(bookingId);
+    await releaseHoldTicket(bookingId);
     await Booking.deleteOne({ _id: bookingId });
     throw err;
   }
@@ -195,64 +221,79 @@ export async function simulateCheckout(user, { orderId, outcome }) {
 // ───────────────────────────── confirm (after payment) ─────────────────────────────
 
 /**
- * Give the whole advance back. The Payment row is claimed atomically first (CREATED/PAID → REFUNDED),
- * so two racing requests can never refund the same money twice.
+ * Give the whole advance back. Only ever called by the request that owns the payment (status PROCESSING).
+ * The row goes REFUNDING → REFUNDED, or REFUND_FAILED if the gateway errors, so a failed refund is visible
+ * (admin can retry it) instead of being silently marked as done.
  */
 async function refundWholeAdvance(orderId, paymentId) {
-  const claimed = await Payment.findOneAndUpdate(
-    { orderId, purpose: 'ADVANCE', status: { $in: ['CREATED', 'PAID'] } },
-    { $set: { status: 'REFUNDED', paymentId } },
+  const row = await Payment.findOneAndUpdate(
+    { orderId, purpose: 'ADVANCE', status: 'PROCESSING' },
+    { $set: { status: 'REFUNDING', paymentId } },
     { returnDocument: 'after' },
   );
-  if (!claimed) return null; // already refunded
-  const refund = await paymentProvider().refund({ paymentId, amount: claimed.amount });
-  claimed.refundId = refund.refundId;
-  await claimed.save();
-  return refund;
+  if (!row) return null;
+  try {
+    const refund = await paymentProvider().refund({ paymentId, amount: row.amount });
+    await Payment.updateOne({ _id: row._id, status: 'REFUNDING' }, { $set: { status: 'REFUNDED', refundId: refund.refundId } });
+    return refund;
+  } catch (err) {
+    await Payment.updateOne({ _id: row._id, status: 'REFUNDING' }, { $set: { status: 'REFUND_FAILED', failureReason: err.message } });
+    logger.error({ err: { message: err.message }, orderId }, 'Refund failed — needs a manual retry');
+    return null;
+  }
 }
 
 export async function confirmBooking(user, bookingId, { orderId, paymentId, signature }, now = new Date()) {
   const booking = await Booking.findById(bookingId);
   if (!booking || !booking.userId.equals(user._id)) throw notFound('Booking');
 
+  const done = async (b) => {
+    const venue = await Venue.findById(b.venueId).select('contactPhone');
+    return toBookingDto(b, { venueContact: venue?.contactPhone });
+  };
   // Idempotent: the app may retry after a flaky network.
-  if (booking.status === 'CONFIRMED' && booking.payment?.paymentId === paymentId) return toBookingDto(booking);
+  if (booking.status === 'CONFIRMED' && booking.payment?.paymentId === paymentId) return done(booking);
   if (booking.payment?.orderId !== orderId) throw badRequest('Payment does not belong to this booking');
 
-  const provider = paymentProvider();
-  if (!provider.verifyPayment({ orderId, paymentId, signature })) {
+  if (!paymentProvider().verifyPayment({ orderId, paymentId, signature })) {
     throw new AppError(400, 'PAYMENT_INVALID', 'Payment could not be verified');
   }
-  const payment = await Payment.findOne({ orderId });
-  const engine = engineFor(booking.bookingMode);
 
-  // Real money for a booking that is no longer waiting (expired by the sweep, or abandoned):
-  // never keep it — refund in full, once.
-  if (booking.status !== 'HELD') {
-    if (['EXPIRED', 'CANCELLED'].includes(booking.status) && !booking.payment?.paymentId) {
-      await refundWholeAdvance(orderId, paymentId);
-      throw gone('Your hold ran out before the payment finished. The advance has been refunded in full.', 'HOLD_EXPIRED');
-    }
-    throw conflict(`This booking is ${booking.status.toLowerCase()}`, 'NOT_HELD');
+  // Claim the payment. From here on exactly one request handles this money: a double tap or a retry
+  // that arrives while we're working gets "already processing" and touches nothing.
+  const claim = await Payment.findOneAndUpdate(
+    { orderId, purpose: 'ADVANCE', status: 'CREATED' },
+    { $set: { status: 'PROCESSING', paymentId } },
+    { returnDocument: 'after' },
+  );
+  if (!claim) {
+    const fresh = await Booking.findById(booking._id);
+    if (fresh?.status === 'CONFIRMED' && fresh.payment?.paymentId === paymentId) return done(fresh);
+    throw conflict('This payment is already being processed. Refresh in a moment.', 'PAYMENT_IN_PROGRESS');
   }
 
-  // Money arrived after the 10 minutes were up: give it back, don't confirm.
-  if (booking.holdExpiresAt <= now) {
-    await Booking.updateOne({ _id: booking._id, status: 'HELD' }, { $set: { status: 'EXPIRED' } });
+  const engine = engineFor(booking.bookingMode);
+  // Not confirming after all: give the money back. We own the payment, so no other request can confirm
+  // this booking, which makes releasing its locks safe in every branch below.
+  const giveBack = async (bookingUpdate, error) => {
+    if (bookingUpdate) await Booking.updateOne({ _id: booking._id, status: 'HELD' }, { $set: bookingUpdate });
     await engine.releaseBooking(booking._id);
+    await releaseHoldTicket(booking._id);
     await refundWholeAdvance(orderId, paymentId);
-    throw gone('Your hold ran out before the payment finished. The advance has been refunded in full.', 'HOLD_EXPIRED');
+    throw error;
+  };
+
+  // Money for a hold that already ran out, or that was released/cancelled: never keep it.
+  if (booking.status !== 'HELD' || booking.holdExpiresAt <= now) {
+    return giveBack({ status: 'EXPIRED' }, gone(EXPIRED_MESSAGE, 'HOLD_EXPIRED'));
   }
 
   const secured = await engine.convertHoldsToBooking(booking._id);
   if (secured < booking.slot.units.length) {
-    await engine.releaseBooking(booking._id);
-    await Booking.updateOne(
-      { _id: booking._id, status: 'HELD' },
-      { $set: { status: 'CANCELLED', cancellation: { by: 'system', reason: 'Slot no longer available', at: now, refundPercent: 100, refundAmount: booking.pricing.advance } } },
+    return giveBack(
+      { status: 'CANCELLED', cancellation: { by: 'system', reason: 'Slot no longer available', at: now, refundPercent: 100, refundAmount: booking.pricing.advance, refundStatus: 'REFUNDED' } },
+      conflict('Sorry — the slot was lost before payment completed. Your advance has been refunded.', 'SLOT_TAKEN'),
     );
-    await refundWholeAdvance(orderId, paymentId);
-    throw conflict('Sorry — the slot was lost before payment completed. Your advance has been refunded.', 'SLOT_TAKEN');
   }
 
   const confirmed = await Booking.findOneAndUpdate(
@@ -263,19 +304,12 @@ export async function confirmBooking(user, bookingId, { orderId, paymentId, sign
     },
     { returnDocument: 'after' },
   );
-  if (!confirmed) {
-    // The expiry sweep got there first.
-    await engine.releaseBooking(booking._id);
-    await refundWholeAdvance(orderId, paymentId);
-    throw gone('Your hold ran out before the payment finished. The advance has been refunded in full.', 'HOLD_EXPIRED');
-  }
-  if (payment) {
-    payment.status = 'PAID';
-    payment.paymentId = paymentId;
-    await payment.save();
-  }
-  const venue = await Venue.findById(confirmed.venueId).select('contactPhone');
-  return toBookingDto(confirmed, { venueContact: venue?.contactPhone });
+  // The expiry sweep or a "release hold" got there first.
+  if (!confirmed) return giveBack(null, gone(EXPIRED_MESSAGE, 'HOLD_EXPIRED'));
+
+  await Payment.updateOne({ _id: claim._id, status: 'PROCESSING' }, { $set: { status: 'PAID' } });
+  await releaseHoldTicket(booking._id);
+  return done(confirmed);
 }
 
 // ───────────────────────────── cancel ─────────────────────────────
@@ -312,12 +346,14 @@ export async function cancelBooking(actor, bookingId, { reason }, now = new Date
   if (!quote.cancellable) throw conflict('This booking can no longer be cancelled', 'NOT_CANCELLABLE');
   if (booking.status === 'HELD' && by === 'owner') throw conflict('This booking is still waiting for payment');
 
+  const willRefund = quote.refundAmount > 0 && Boolean(booking.payment?.paymentId);
   const cancellation = {
     by,
     reason: reason || null,
     at: now,
     refundPercent: quote.refundPercent,
     refundAmount: quote.refundAmount,
+    refundStatus: willRefund ? 'PENDING' : 'NONE',
   };
   // Flip the status first and only once — this is what prevents a double refund on a double click.
   const updated = await Booking.findOneAndUpdate(
@@ -327,21 +363,33 @@ export async function cancelBooking(actor, bookingId, { reason }, now = new Date
   );
   if (!updated) throw conflict('This booking changed just now — please refresh', 'STALE');
   await engineFor(booking.bookingMode).releaseBooking(booking._id);
+  await releaseHoldTicket(booking._id);
 
-  if (quote.refundAmount > 0 && booking.payment?.paymentId) {
+  if (willRefund) {
+    // Write the refund down before calling the gateway, so a failure leaves a visible, retryable record.
     const provider = paymentProvider();
-    const refund = await provider.refund({ paymentId: booking.payment.paymentId, amount: quote.refundAmount });
-    await Payment.create({
+    const row = await Payment.create({
       bookingId: booking._id,
       userId: booking.userId,
       provider: provider.name,
       purpose: 'REFUND',
       amount: quote.refundAmount,
       paymentId: booking.payment.paymentId,
-      refundId: refund.refundId,
-      status: 'REFUNDED',
+      status: 'PENDING',
     });
-    updated.cancellation.refundId = refund.refundId;
+    try {
+      const refund = await provider.refund({ paymentId: booking.payment.paymentId, amount: quote.refundAmount });
+      row.status = 'REFUNDED';
+      row.refundId = refund.refundId;
+      updated.cancellation.refundId = refund.refundId;
+      updated.cancellation.refundStatus = 'REFUNDED';
+    } catch (err) {
+      row.status = 'REFUND_FAILED';
+      row.failureReason = err.message;
+      updated.cancellation.refundStatus = 'FAILED';
+      logger.error({ err: { message: err.message }, bookingId: booking._id.toString() }, 'Refund failed — needs a manual retry');
+    }
+    await row.save();
     await updated.save();
   }
   return toBookingDto(updated, { view: by === 'user' ? 'user' : 'staff' });
@@ -372,7 +420,7 @@ export async function getBooking(actor, bookingId, now = new Date()) {
   const booking = await Booking.findById(bookingId).populate('userId', 'name email phone');
   if (!booking) throw notFound('Booking');
   // userId is populated here, so hand assertCanTouch the raw ids.
-  const by = assertCanTouch(actor, { ownerId: booking.ownerId, userId: booking.userId._id });
+  const by = assertCanTouch(actor, { ownerId: booking.ownerId, userId: booking.userId?._id ?? booking.populated('userId') ?? booking.userId });
   const venue = await Venue.findById(booking.venueId).select('contactPhone');
   return {
     ...toBookingDto(booking, { view: by === 'user' ? 'user' : 'staff', venueContact: venue?.contactPhone }),

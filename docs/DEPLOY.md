@@ -15,7 +15,9 @@ Use an existing cluster or create a free M0 one.
 Service **arangam-api** (Singapore, free) is already connected to this repo and redeploys on every push to `main`.
 
 - Build: `npm --prefix api ci --omit=dev` · Start: `npm --prefix api start`
-- Environment: `NODE_ENV=production`, `MONGODB_DB=arangam`, `JWT_SECRET`, `MOCK_PAYMENT_SECRET`, `SEED_DEMO_DATA=true`, `PAYMENT_PROVIDER=mock` are set.
+- Environment: `NODE_ENV=production`, `MONGODB_DB=arangam`, `JWT_SECRET`, `MOCK_PAYMENT_SECRET`, `DEMO_MODE=true`, `DEMO_ADMIN_PASSWORD`, `SEED_DEMO_DATA=true`, `PAYMENT_PROVIDER=mock` are set.
+- `DEMO_MODE=true` is required for mock payments and demo data in production — the API refuses to start otherwise. Turn it off (and switch to Razorpay) for a real launch.
+- The demo admin (`admin@arangam.demo`) uses `DEMO_ADMIN_PASSWORD`; change it there and restart to rotate it.
 - **You add:** `MONGODB_URI` = your Atlas string → Save. Render redeploys; logs show `MongoDB connected` then `Demo data seeded`.
 - Check: `https://arangam-api.onrender.com/health` → `{"status":"ok","db":"up"}`.
 

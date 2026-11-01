@@ -18,7 +18,7 @@ Built so other kinds of venues (party halls, gyms, concerts) can plug in later w
 |---|---|---|
 | Customer | `user@arangam.demo` | `User@1234` |
 | Hall owner | `owner@arangam.demo` | `Owner@1234` |
-| Admin | `admin@arangam.demo` | `Admin@1234` |
+| Admin | `admin@arangam.demo` | on the live site: the `DEMO_ADMIN_PASSWORD` env var in Render · locally: `Admin@1234` |
 
 ## What's inside
 

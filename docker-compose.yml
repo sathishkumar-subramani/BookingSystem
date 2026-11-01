@@ -21,6 +21,7 @@ services:
       MONGODB_URI: mongodb://mongo:27017
       MONGODB_DB: arangam
       JWT_SECRET: ${JWT_SECRET:-local-docker-secret-change-me-0123456789abcdef}
+      DEMO_MODE: "true"
       SEED_DEMO_DATA: "true"
       CLIENT_ORIGINS: ""
 

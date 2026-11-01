@@ -16,7 +16,20 @@ import { ensureVenueTypes } from '../services/catalog.service.js';
 import { DEMO_CUSTOMERS, DEMO_HALLS, DEMO_OWNERS } from './halls.js';
 
 export const DEMO_DOMAIN = '@arangam.demo';
-export const DEMO_PASSWORDS = { admin: 'Admin@1234', owner: 'Owner@1234', user: 'User@1234' };
+// The demo admin's password comes from DEMO_ADMIN_PASSWORD on a public deployment, so the admin console
+// isn't open to everyone who reads the README. Customer/owner demo passwords are public on purpose.
+export const DEMO_PASSWORDS = { admin: process.env.DEMO_ADMIN_PASSWORD || 'Admin@1234', owner: 'Owner@1234', user: 'User@1234' };
+
+/** If DEMO_ADMIN_PASSWORD changed (or was set after seeding), update the demo admin to match. */
+export async function syncDemoAdminPassword() {
+  if (!process.env.DEMO_ADMIN_PASSWORD) return;
+  const admin = await User.findOne({ email: `admin${DEMO_DOMAIN}` }).select('+passwordHash');
+  if (!admin || (await bcrypt.compare(process.env.DEMO_ADMIN_PASSWORD, admin.passwordHash))) return;
+  admin.passwordHash = await bcrypt.hash(process.env.DEMO_ADMIN_PASSWORD, 10);
+  await admin.save();
+  await RefreshToken.updateMany({ userId: admin._id, revokedAt: null }, { $set: { revokedAt: new Date() } });
+  logger.info('Demo admin password updated from DEMO_ADMIN_PASSWORD');
+}
 
 // Small deterministic random generator so every seed produces the same halls and prices.
 function makeRng(seed) {

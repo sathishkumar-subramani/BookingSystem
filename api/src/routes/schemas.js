@@ -10,7 +10,7 @@ export const phone = z
   .trim()
   .regex(/^(\+91[\s-]?)?[6-9]\d{9}$/, 'Enter a 10-digit Indian mobile number');
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use 24-hour time like 05:30');
-const paise = z.number().int().min(0).max(100_000_000); // up to ₹10 lakh per slot
+const paise = z.number().int().min(0).max(100_000_000).multipleOf(100, 'Prices are in whole rupees'); // up to ₹10 lakh per slot
 const district = z.enum(DISTRICT_NAMES);
 const csvList = z
   .string()
@@ -33,6 +33,7 @@ export const registerBody = z
   .strict();
 export const loginBody = z.object({ email: z.string().trim().toLowerCase().email(), password: z.string().min(1) });
 export const refreshBody = z.object({ refreshToken: z.string().min(10) });
+export const logoutBody = z.object({ refreshToken: z.string().max(200).optional() });
 export const profileBody = z
   .object({
     name: z.string().trim().min(2).max(80).optional(),
@@ -54,13 +55,13 @@ export const searchQuery = z.object({
   guests: z.coerce.number().int().min(1).max(20000).optional(),
   maxPrice: z.coerce.number().int().min(0).optional(),
   amenities: csvList.pipe(z.array(z.enum(AMENITY_KEYS))),
-  lat: z.coerce.number().min(-90).max(90).optional(),
-  lng: z.coerce.number().min(-180).max(180).optional(),
+  lat: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().min(-90).max(90).optional()),
+  lng: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().min(-180).max(180).optional()),
   radiusKm: z.coerce.number().min(1).max(300).default(25),
   sort: z.enum(['distance', 'price_asc', 'price_desc', 'capacity_desc', 'newest']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(12),
-});
+}).refine((q) => (q.lat == null) === (q.lng == null), { message: 'Send both lat and lng', path: ['lat'] });
 export const monthQuery = z.object({ month: monthStr });
 export const venueParam = z.object({ idOrSlug: z.string().min(1).max(100) });
 

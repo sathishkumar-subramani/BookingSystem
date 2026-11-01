@@ -76,8 +76,11 @@ export async function updateVenue(owner, venueId, data) {
   const simple = ['name', 'tagline', 'description', 'capacity', 'rooms', 'parkingCars', 'amenities', 'advancePercent', 'cancellationPolicy', 'contactPhone'];
   for (const k of simple) if (data[k] !== undefined) venue[k] = data[k];
   if (data.address) {
+    const districtChanged = data.address.district && data.address.district !== venue.address.district;
     venue.address = { ...venue.address.toObject(), ...data.address, state: 'Tamil Nadu' };
-    if (!data.location && data.address.district) venue.location = await resolveLocation({ address: venue.address });
+    // Only fall back to the district centre when the hall moved district and no new pin was sent;
+    // editing a pincode must not throw away a location the owner pinned.
+    if (!data.location && districtChanged) venue.location = await resolveLocation({ address: venue.address });
   }
   if (data.location) venue.location = { type: 'Point', coordinates: [data.location.lng, data.location.lat] };
   if (data.slots) venue.slots = buildSlots(type, data.slots);

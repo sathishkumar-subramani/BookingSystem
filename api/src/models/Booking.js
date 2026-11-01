@@ -59,6 +59,7 @@ const bookingSchema = new mongoose.Schema(
       refundPercent: Number,
       refundAmount: Number,
       refundId: String,
+      refundStatus: { type: String, enum: ['NONE', 'PENDING', 'REFUNDED', 'FAILED'] },
     },
     isDemo: { type: Boolean, default: false },
   },

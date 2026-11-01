@@ -26,6 +26,10 @@ services:
         generateValue: true
       - key: CLIENT_ORIGINS
         value: ""              # empty = allow any origin; or "https://your-site.vercel.app,https://*.vercel.app"
+      - key: DEMO_MODE
+        value: "true"          # this deployment is a public demo: mock payments + sample data allowed
+      - key: DEMO_ADMIN_PASSWORD
+        generateValue: true    # the demo admin's password; read it in the Render dashboard
       - key: SEED_DEMO_DATA
         value: "true"          # fills an EMPTY database with demo halls once; harmless afterwards
       - key: PAYMENT_PROVIDER

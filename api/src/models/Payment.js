@@ -13,7 +13,9 @@ const paymentSchema = new mongoose.Schema(
     orderId: { type: String, index: true, unique: true, sparse: true },
     paymentId: String,
     refundId: String,
-    status: { type: String, enum: ['CREATED', 'PAID', 'FAILED', 'REFUNDED'], default: 'CREATED' },
+    // CREATED → PROCESSING (one confirm request owns it) → PAID, or → REFUNDING → REFUNDED / REFUND_FAILED.
+    // REFUND rows: PENDING → REFUNDED / REFUND_FAILED.
+    status: { type: String, enum: ['CREATED', 'PROCESSING', 'PAID', 'FAILED', 'PENDING', 'REFUNDING', 'REFUNDED', 'REFUND_FAILED'], default: 'CREATED' },
     failureReason: String,
     isDemo: { type: Boolean, default: false },
   },

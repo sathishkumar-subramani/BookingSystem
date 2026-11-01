@@ -74,6 +74,9 @@ export async function reviewOwner(ownerId, { action, note }) {
   owner.owner.reviewNote = note || undefined;
   owner.owner.reviewedAt = new Date();
   await owner.save();
+  if (action === 'reject') {
+    await Venue.updateMany({ ownerId: owner._id, status: 'approved' }, { $set: { status: 'suspended', reviewNote: 'Owner account not approved' } });
+  }
   return owner.toPublic();
 }
 

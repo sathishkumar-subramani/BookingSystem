@@ -35,4 +35,12 @@ export const config = {
   mockPaymentSecret: process.env.MOCK_PAYMENT_SECRET || 'mock-gateway-secret',
   locationProvider: process.env.LOCATION_PROVIDER || 'static',
   seedDemoData: (process.env.SEED_DEMO_DATA || 'false').toLowerCase() === 'true',
+  // Demo mode must be switched on explicitly in production: it allows the mock payment gateway
+  // (anyone can "pay") and seeding sample data. A real deployment leaves it off.
+  demoMode: (process.env.DEMO_MODE || 'false').toLowerCase() === 'true',
 };
+
+if (config.isProd && !config.demoMode) {
+  if (config.paymentProvider === 'mock') throw new Error('PAYMENT_PROVIDER=mock is only allowed with DEMO_MODE=true in production');
+  if (config.seedDemoData) throw new Error('SEED_DEMO_DATA=true is only allowed with DEMO_MODE=true in production');
+}

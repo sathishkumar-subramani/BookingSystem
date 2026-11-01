@@ -15,7 +15,6 @@ const safeNext = (n: string | null) => (n && n.startsWith('/') && !n.startsWith(
 const DEMO = [
   ['Customer', 'user@arangam.demo', 'User@1234'],
   ['Hall owner', 'owner@arangam.demo', 'Owner@1234'],
-  ['Admin', 'admin@arangam.demo', 'Admin@1234'],
 ] as const;
 
 function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {

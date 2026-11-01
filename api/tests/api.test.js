@@ -242,6 +242,38 @@ describe.skipIf(!URI)('Arangam API (MongoDB)', () => {
       await api().post('/api/bookings').set(auth(again.token)).send({ venueId: coimbatoreHall.id, date, slotKey: 'EVENING', guests: 100 }).expect(201);
     });
 
+    it('survives a double-tapped confirm: one booking, locks kept, money not refunded', async () => {
+      const date = await freeDate(coimbatoreHall.id, 'MORNING', 160);
+      const u = await newUser();
+      const created = await api().post('/api/bookings').set(auth(u.token)).send({ venueId: coimbatoreHall.id, date, slotKey: 'MORNING', guests: 100 }).expect(201);
+      const paid = await api().post('/api/payments/mock/checkout').set(auth(u.token)).send({ orderId: created.body.checkout.orderId }).expect(200);
+      const tries = await Promise.all(
+        [1, 2, 3].map(() => api().post(`/api/bookings/${created.body.booking.id}/confirm`).set(auth(u.token)).send(paid.body)),
+      );
+      expect(tries.some((r) => r.status === 200)).toBe(true);
+      expect(tries.every((r) => r.status === 200 || r.body.error?.code === 'PAYMENT_IN_PROGRESS')).toBe(true);
+      expect((await Booking.findById(created.body.booking.id)).status).toBe('CONFIRMED');
+      expect(await SlotLock.countDocuments({ bookingId: created.body.booking.id, kind: 'booking' })).toBe(1);
+      const { Payment } = await import('../src/models/Payment.js');
+      expect((await Payment.findOne({ orderId: created.body.checkout.orderId })).status).toBe('PAID');
+      expect(await Payment.countDocuments({ bookingId: created.body.booking.id, purpose: 'REFUND' })).toBe(0);
+    });
+
+    it('caps open holds at two even when requests arrive together', async () => {
+      const u = await newUser();
+      const halls = await api().get('/api/venues?district=Chennai&limit=4').expect(200);
+      const bodies = [];
+      for (const h of halls.body.items.slice(0, 4)) bodies.push({ venueId: h.id, date: await freeDate(h.id, 'EVENING', 200), slotKey: 'EVENING', guests: 100 });
+      const results = await Promise.all(bodies.map((b) => api().post('/api/bookings').set(auth(u.token)).send(b)));
+      expect(results.filter((r) => r.status === 201)).toHaveLength(2);
+      expect(results.filter((r) => r.body.error?.code === 'TOO_MANY_HOLDS')).toHaveLength(2);
+    });
+
+    it('refuses to search a date that cannot be booked', async () => {
+      await api().get(`/api/venues?date=${todayIST()}`).expect(400);
+      await api().get('/api/venues?lat=9.9').expect(400); // lat without lng
+    });
+
     it("hides other people's bookings", async () => {
       const mine = await api().get('/api/bookings').set(auth(userToken)).expect(200);
       const stranger = await newUser();
@@ -304,6 +336,52 @@ describe.skipIf(!URI)('Arangam API (MongoDB)', () => {
       // Another owner can't touch this hall.
       const intruder = await newUser('owner');
       await api().get(`/api/owner/venues/${venueId}`).set(auth(intruder.token)).expect(404);
+    });
+
+    it("keeps the owner's map pin when only the address text changes", async () => {
+      const owner = await newUser('owner');
+      const created = await api()
+        .post('/api/owner/venues')
+        .set(auth(owner.token))
+        .send({
+          name: 'Pinned Mahal',
+          address: { city: 'Madurai', district: 'Madurai' },
+          location: { lat: 9.95, lng: 78.15 },
+          capacity: { seating: 300, dining: 100 },
+          slots: [{ key: 'FULL_DAY', price: 80_000_00 }],
+        })
+        .expect(201);
+      const res = await api()
+        .patch(`/api/owner/venues/${created.body.venue.id}`)
+        .set(auth(owner.token))
+        .send({ address: { city: 'Madurai', district: 'Madurai', pincode: '625020' } })
+        .expect(200);
+      expect(res.body.venue.location).toEqual({ lat: 9.95, lng: 78.15 });
+    });
+
+    it('drops a full-day-only hall from date search once half the day is taken', async () => {
+      const owner = await newUser('owner', { phone: '9000000198' });
+      const v = await api()
+        .post('/api/owner/venues')
+        .set(auth(owner.token))
+        .send({
+          name: 'Fullday Only Mahal',
+          address: { city: 'Erode', district: 'Erode' },
+          capacity: { seating: 400, dining: 200 },
+          slots: [{ key: 'FULL_DAY', price: 90_000_00 }],
+          contactPhone: '9000000198',
+        })
+        .expect(201);
+      const id = v.body.venue.id;
+      await api().post(`/api/owner/venues/${id}/submit`).set(auth(owner.token)).expect(200);
+      await api().post(`/api/admin/owners/${owner.user.id}/review`).set(auth(adminToken)).send({ action: 'approve' }).expect(200);
+      await api().post(`/api/admin/venues/${id}/review`).set(auth(adminToken)).send({ action: 'approve' }).expect(200);
+      const date = addDays(todayIST(), 33);
+      const before = await api().get(`/api/venues?district=Erode&date=${date}&limit=50`).expect(200);
+      expect(before.body.items.map((x) => x.id)).toContain(id);
+      await api().post(`/api/owner/venues/${id}/blocks`).set(auth(owner.token)).send({ date, slotKey: 'MORNING' }).expect(201);
+      const after = await api().get(`/api/venues?district=Erode&date=${date}&limit=50`).expect(200);
+      expect(after.body.items.map((x) => x.id)).not.toContain(id);
     });
 
     it('applies a special-date price to new bookings', async () => {

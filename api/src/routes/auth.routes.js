@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import * as auth from '../services/auth.service.js';
-import { loginBody, passwordBody, profileBody, refreshBody, registerBody } from './schemas.js';
+import { loginBody, logoutBody, passwordBody, profileBody, refreshBody, registerBody } from './schemas.js';
 
 const router = Router();
 
@@ -17,6 +17,15 @@ const limiter = rateLimit({
   message: { error: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again in a few minutes.' } },
 });
 
+// Token refresh happens in the background for every signed-in phone; many share one IP on mobile networks.
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: config.isTest ? 10_000 : 600,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many requests. Try again in a few minutes.' } },
+});
+
 router.post('/register', limiter, validate({ body: registerBody }), async (req, res) => {
   res.status(201).json(await auth.register(req.data.body));
 });
@@ -25,12 +34,12 @@ router.post('/login', limiter, validate({ body: loginBody }), async (req, res) =
   res.json(await auth.login(req.data.body));
 });
 
-router.post('/refresh', limiter, validate({ body: refreshBody }), async (req, res) => {
+router.post('/refresh', refreshLimiter, validate({ body: refreshBody }), async (req, res) => {
   res.json(await auth.refresh(req.data.body.refreshToken));
 });
 
-router.post('/logout', async (req, res) => {
-  await auth.logout(req.body?.refreshToken);
+router.post('/logout', validate({ body: logoutBody }), async (req, res) => {
+  await auth.logout(req.data.body.refreshToken);
   res.status(204).end();
 });
 
