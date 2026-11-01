@@ -1,0 +1,91 @@
+/* Colours mirror shared/theme.json — Kanjivaram silk: peacock body, arakku ink, zari border. */
+:root {
+  color-scheme: light;
+  --bg: #fbfaf6;
+  --surface: #ffffff;
+  --surface-alt: #f3f0e9;
+  --ink: #221a1c;
+  --ink-soft: #5e5254;
+  --line: #e4ded3;
+  --brand: #6e1423;
+  --primary: #0b5d5e;
+  --primary-ink: #ffffff;
+  --primary-soft: #dcedea;
+  --zari: #c8962e;
+  --zari-soft: #f6ecd3;
+  --free: #1f7a55;
+  --free-soft: #ddf1e6;
+  --held: #a86a00;
+  --held-soft: #fbebc8;
+  --taken: #8e2433;
+  --taken-soft: #f5dcdd;
+  --danger: #b42318;
+  --shadow: 0 1px 2px rgb(34 26 28 / 0.06), 0 8px 24px -12px rgb(34 26 28 / 0.18);
+
+  --font: 'Anek Tamil Variable', 'Anek Tamil', 'Noto Sans Tamil', system-ui, sans-serif;
+  /* Type scale (1.25) */
+  --t-xs: 0.8rem;
+  --t-sm: 0.9rem;
+  --t-md: 1rem;
+  --t-lg: 1.25rem;
+  --t-xl: 1.56rem;
+  --t-2xl: 1.95rem;
+  --t-3xl: 2.44rem;
+  --t-4xl: clamp(2.4rem, 5.5vw, 3.8rem);
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --gutter: 16px;
+  --max: 1180px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #1b1214;
+    --surface: #251a1c;
+    --surface-alt: #2e2225;
+    --ink: #f4ede6;
+    --ink-soft: #bfb2ae;
+    --line: #3e3033;
+    --brand: #f0a6b0;
+    --primary: #5bc2bc;
+    --primary-ink: #0e2726;
+    --primary-soft: #173a39;
+    --zari: #e2b85a;
+    --zari-soft: #3a2e17;
+    --free: #6fd3a3;
+    --free-soft: #173327;
+    --held: #f0c062;
+    --held-soft: #3a2e14;
+    --taken: #f08c99;
+    --taken-soft: #3d1e23;
+    --danger: #ff8a80;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px -14px rgb(0 0 0 / 0.6);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1b1214;
+  --surface: #251a1c;
+  --surface-alt: #2e2225;
+  --ink: #f4ede6;
+  --ink-soft: #bfb2ae;
+  --line: #3e3033;
+  --brand: #f0a6b0;
+  --primary: #5bc2bc;
+  --primary-ink: #0e2726;
+  --primary-soft: #173a39;
+  --zari: #e2b85a;
+  --zari-soft: #3a2e17;
+  --free: #6fd3a3;
+  --free-soft: #173327;
+  --held: #f0c062;
+  --held-soft: #3a2e14;
+  --taken: #f08c99;
+  --taken-soft: #3d1e23;
+  --danger: #ff8a80;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px -14px rgb(0 0 0 / 0.6);
+}
