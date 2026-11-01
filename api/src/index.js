@@ -10,12 +10,15 @@ const app = createApp();
 // Listen first so Render's health check gets an answer while MongoDB is still connecting.
 const server = app.listen(config.port, '0.0.0.0', () => logger.info(`Arangam API on :${config.port}`));
 
-async function start() {
+async function start(attempt = 1) {
   try {
     await connectDb();
     if (config.seedDemoData) await seedIfEmpty();
   } catch (err) {
-    logger.error({ err: { message: err.message } }, 'MongoDB connection failed — /health will report degraded');
+    // Keep the API up (health says "degraded") and try again with backoff, e.g. while Atlas wakes up.
+    const wait = Math.min(60, 5 * attempt);
+    logger.error({ err: { message: err.message } }, `MongoDB connection failed — retrying in ${wait}s`);
+    setTimeout(() => start(attempt + 1), wait * 1000).unref();
     return;
   }
   // Expire unpaid holds every minute (requests also trigger this lazily, for when the free instance sleeps).
