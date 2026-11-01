@@ -7,16 +7,28 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_API_URL": "https://arangam-api.onrender.com/api" }
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://arangam-api.onrender.com/api"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "android": { "buildType": "apk" },
-      "env": { "EXPO_PUBLIC_API_URL": "https://arangam-api.onrender.com/api" }
+      "android": {
+        "buildType": "apk",
+        "image": "latest"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://arangam-api.onrender.com/api"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_URL": "https://arangam-api.onrender.com/api" }
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://arangam-api.onrender.com/api"
+      },
+      "android": {
+        "image": "latest"
+      }
     }
   },
   "submit": {
