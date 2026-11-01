@@ -17,7 +17,7 @@ async function start(attempt = 1) {
   } catch (err) {
     // Keep the API up (health says "degraded") and try again with backoff, e.g. while Atlas wakes up.
     const wait = Math.min(60, 5 * attempt);
-    logger.error({ err: { message: err.message } }, `MongoDB connection failed — retrying in ${wait}s`);
+    logger.error({ err: { message: err.message }, db: config.mongoDb }, `MongoDB connection failed — retrying in ${wait}s`);
     setTimeout(() => start(attempt + 1), wait * 1000).unref();
     return;
   }
