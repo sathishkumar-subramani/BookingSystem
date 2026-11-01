@@ -39,6 +39,13 @@ export function Anim({ name, loop = true, className, style, stillFrame = 0, labe
     };
   }, [name]);
 
+  useEffect(() => {
+    // Reduced motion shows a still frame and never "completes", so report completion ourselves.
+    if (!reduce || !onComplete) return;
+    const t = setTimeout(onComplete, 1200);
+    return () => clearTimeout(t);
+  }, [reduce, onComplete]);
+
   const box = <div className={className} style={style} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true} />;
   if (!data) return box;
   return (

@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "Arangam",
+    "slug": "arangam",
+    "scheme": "arangam",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sathishkumar.arangam",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Arangam uses your location to show marriage halls near you."
+      }
+    },
+    "android": {
+      "package": "com.sathishkumar.arangam",
+      "adaptiveIcon": {
+        "backgroundColor": "#6E1423",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "backgroundColor": "#6E1423"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Arangam uses your location to show marriage halls near you."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
