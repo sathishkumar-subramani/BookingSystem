@@ -8,17 +8,7 @@ on:
 jobs:
   api:
     name: API tests (real MongoDB)
-    # Pinned: MongoDB 8 refuses to start on Linux 6.19+ kernels (SERVER-121912), which newer runner images use.
-    runs-on: ubuntu-24.04
-    services:
-      mongo:
-        image: mongo:8
-        ports: ["27017:27017"]
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: api
@@ -29,6 +19,28 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: api/package-lock.json
+
+      # Some MongoDB builds refuse to start on Linux 6.19+ kernels (SERVER-121912), which current runners use.
+      # Try a few images and keep the first one that answers a ping.
+      - name: Start MongoDB
+        run: |
+          for img in mongo:latest mongo:8.3 mongo:8.2 mongo:8.0 mongo:7.0; do
+            docker rm -f mongo >/dev/null 2>&1 || true
+            docker run -d --name mongo -p 27017:27017 "$img" >/dev/null 2>&1 || continue
+            for i in $(seq 1 30); do
+              if docker exec mongo mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' >/dev/null 2>&1; then
+                echo "MongoDB ready: $img ($(docker exec mongo mongod --version | head -1))"
+                exit 0
+              fi
+              if [ "$(docker inspect -f '{{.State.Running}}' mongo)" != "true" ]; then
+                echo "$img did not start:"; docker logs mongo 2>&1 | tail -1
+                break
+              fi
+              sleep 2
+            done
+          done
+          echo "No MongoDB image could start on this runner"; exit 1
+
       - run: npm ci
       - run: npm test
         env:
