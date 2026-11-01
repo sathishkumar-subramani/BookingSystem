@@ -1,0 +1,29 @@
+import { createApp } from './app.js';
+import { config } from './config.js';
+import { connectDb } from './db.js';
+import { logger } from './lib/logger.js';
+import { sweep } from './services/booking.service.js';
+import { seedIfEmpty } from './seed/demo.js';
+
+const app = createApp();
+
+// Listen first so Render's health check gets an answer while MongoDB is still connecting.
+const server = app.listen(config.port, '0.0.0.0', () => logger.info(`Arangam API on :${config.port}`));
+
+async function start() {
+  try {
+    await connectDb();
+    if (config.seedDemoData) await seedIfEmpty();
+  } catch (err) {
+    logger.error({ err: { message: err.message } }, 'MongoDB connection failed — /health will report degraded');
+    return;
+  }
+  // Expire unpaid holds every minute (requests also trigger this lazily, for when the free instance sleeps).
+  setInterval(() => sweep().catch((err) => logger.warn({ err }, 'sweep failed')), 60_000).unref();
+}
+
+start();
+
+const shutdown = () => server.close(() => process.exit(0));
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

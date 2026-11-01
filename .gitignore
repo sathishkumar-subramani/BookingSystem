@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+*.log
+coverage/
+dist/
+.DS_Store
+# Expo
+mobile/.expo/
+mobile/expo-env.d.ts
+mobile/android/
+mobile/ios/
+*.apk
+*.aab

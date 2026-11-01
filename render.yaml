@@ -1,0 +1,32 @@
+# Render Blueprint – deploys the Arangam API (Node / Express).
+# Dashboard → New → Blueprint → pick this repo. Render reads this file.
+services:
+  - type: web
+    name: arangam-api
+    runtime: node
+    region: singapore
+    plan: free
+    rootDir: api
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false            # paste your MongoDB Atlas connection string in the Render dashboard
+      - key: MONGODB_DB
+        value: arangam
+      - key: JWT_SECRET
+        generateValue: true    # Render generates a long random secret
+      - key: MOCK_PAYMENT_SECRET
+        generateValue: true
+      - key: CLIENT_ORIGINS
+        value: ""              # empty = allow any origin; or "https://your-site.vercel.app,https://*.vercel.app"
+      - key: SEED_DEMO_DATA
+        value: "true"          # fills an EMPTY database with demo halls once; harmless afterwards
+      - key: PAYMENT_PROVIDER
+        value: mock
