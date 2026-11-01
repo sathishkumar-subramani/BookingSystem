@@ -8,7 +8,7 @@ Built so other kinds of venues (party halls, gyms, concerts) can plug in later w
 |---|---|
 | **Web** | https://arangam-one.vercel.app |
 | **API** | https://arangam-api.onrender.com (`/health`) |
-| **Android** | Expo app in `mobile/` — APK via EAS |
+| **Android** | [Download the APK](https://github.com/sathishkumar-subramani/BookingSystem/releases/latest/download/Arangam.apk) (built by GitHub Actions from `mobile/`) |
 
 > Demo mode: halls are sample data and payments are simulated. No real money moves.
 

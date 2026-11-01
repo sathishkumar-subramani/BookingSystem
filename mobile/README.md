@@ -16,16 +16,21 @@ npx expo start          # scan the QR with Expo Go
 
 The app talks to `EXPO_PUBLIC_API_URL` (see `.env.example`). It defaults to the Render API. On Expo Go, `localhost` means the phone itself — use your laptop's LAN IP if you run the API locally.
 
-## Build an APK (no Android Studio)
+## Get the APK
+
+GitHub Actions builds it (`.github/workflows/android-apk.yml`) on every push that touches `mobile/`, and on demand from **Actions → Android APK → Run workflow**. No Expo account or Android Studio needed.
+
+Latest APK: https://github.com/sathishkumar-subramani/BookingSystem/releases/latest/download/Arangam.apk
+
+Open that link on the phone, then allow "Install unknown apps" for the browser when Android asks. Each build has a higher version code, so a new APK installs over the old one.
+
+The APK is signed with the template's shared debug key, which is fine for a demo but not for the Play Store. For a store release use EAS instead (it keeps a private release key):
 
 ```bash
-npm i -g eas-cli
-eas login
-eas init                # once: creates the Expo project and writes its id into app.json
-eas build -p android --profile preview
+npx eas-cli@latest login
+npx eas-cli@latest init                # once: creates the Expo project and writes its id into app.json
+npx eas-cli@latest build -p android --profile production
 ```
-
-EAS builds in the cloud and gives a download link for the APK. `eas.json` already points the build at `https://arangam-api.onrender.com/api`.
 
 ## Layout
 

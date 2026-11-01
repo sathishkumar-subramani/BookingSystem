@@ -37,18 +37,22 @@ Project **arangam** (root directory `web`, framework Vite) is linked to this rep
 
 Optional: lock CORS by setting `CLIENT_ORIGINS=https://arangam-one.vercel.app` on Render.
 
-## 4. Android APK with EAS
+## 4. Android APK
+
+GitHub Actions builds the APK (`.github/workflows/android-apk.yml`) whenever `mobile/` changes, or on demand from **Actions → Android APK → Run workflow**, and attaches it to a GitHub release:
+
+https://github.com/sathishkumar-subramani/BookingSystem/releases/latest/download/Arangam.apk
+
+It runs `expo prebuild` and Gradle on GitHub's runner, so no Expo account is needed. The APK is signed with the template's debug key: good for demos and sideloading, not for the Play Store.
+
+For a Play Store build, use EAS (it stores a private release key):
 
 ```bash
 cd mobile
-npm ci
-npm i -g eas-cli
-eas login            # free Expo account
-eas init             # once: links the project, writes the project id into app.json
-eas build -p android --profile preview
+npx eas-cli@latest login
+npx eas-cli@latest init      # once: links the project, writes the project id into app.json
+npx eas-cli@latest build -p android --profile production
 ```
-
-Open the link EAS prints on your phone and install the APK. `eas.json` points every profile at the Render API.
 
 ## Razorpay later
 
